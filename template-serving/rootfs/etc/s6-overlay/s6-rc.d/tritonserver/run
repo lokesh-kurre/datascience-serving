@@ -1,0 +1,8 @@
+#!/command/execlineb -P
+with-contenv
+
+importas -S -D /model_repository TRITON_MODEL_REPOSITORY
+importas -S -D 9001 TRITON_HTTP_PORT
+importas -S -D 9002 TRITON_GRPC_PORT
+importas -S -D 9090 TRITON_METRICS_PORT
+tritonserver --model-repository ${TRITON_MODEL_REPOSITORY} --http-port ${TRITON_HTTP_PORT} --grpc-port ${TRITON_GRPC_PORT} --metrics-port ${TRITON_METRICS_PORT}

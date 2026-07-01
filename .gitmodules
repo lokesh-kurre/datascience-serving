@@ -1,0 +1,4 @@
+[submodule "extern/tritonserver"]
+	path = extern/tritonserver
+	url = https://github.com/triton-inference-server/server.git
+	branch = r24.09

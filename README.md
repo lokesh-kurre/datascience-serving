@@ -1,0 +1,119 @@
+# Data Science Serving
+
+Template workspace for building and packaging Triton Inference Server images with a minimal backend set, plus an optional FastAPI wrapper service.
+
+## What This Repo Provides
+
+- Minimal Triton image composition using upstream Triton `compose.py`
+- Configurable Triton tag and backend list from a single Makefile
+- FastAPI + Triton serving template with s6-overlay and s6-rc services
+- S3-friendly model repository usage pattern
+
+## Repository Layout
+
+```text
+.
+├── Makefile
+├── template-serving/
+│   ├── Dockerfile
+│   ├── README.md
+│   └── rootfs/
+│       ├── app/
+│       ├── model_repository/
+│       └── etc/s6-overlay/s6-rc.d/
+└── extern/
+    └── tritonserver/
+```
+
+## Prerequisites
+
+- Docker
+- Python 3
+- Network access to pull Triton base images from NGC
+
+## Build Minimal Triton Image
+
+The root [Makefile](Makefile) composes a slim Triton image from official Triton containers.
+
+1. Show config:
+
+```bash
+make info
+```
+
+2. Generate composed Dockerfile only:
+
+```bash
+make compose
+```
+
+3. Build image:
+
+```bash
+make build
+```
+
+Default output image:
+- `lokeshkurre/tritonserver:24.09-slim`
+
+Common overrides:
+
+```bash
+make build TRITON_TAG=24.10
+make build BACKENDS='python onnxruntime'
+make build ENABLE_GPU=OFF
+make build OUTPUT_IMAGE=myrepo/tritonserver:24.09-slim
+```
+
+## Build FastAPI Wrapper Image
+
+The wrapper template is under [template-serving](template-serving).
+
+1. Build wrapper image:
+
+```bash
+make build-fastapi-wrapper
+```
+
+2. Run wrapper image:
+
+```bash
+make run-fastapi-wrapper
+```
+
+Default wrapper image:
+- `lokeshkurre/tritonserver-fastapi:24.09-slim`
+
+Wrapper details are documented in [template-serving/README.md](template-serving/README.md).
+
+## Runtime Ports
+
+Minimal Triton image (root Makefile run hint):
+- HTTP: 8000
+- gRPC: 8001
+- Metrics: 8002
+
+FastAPI wrapper template:
+- FastAPI: 8080
+- Triton HTTP: 9001
+- Triton gRPC: 9002
+- Triton Metrics: 9090
+
+## Model Repository (Including S3)
+
+Triton can load models from local paths or S3.
+
+Example:
+
+```bash
+tritonserver --model-repository=s3://bucket/path
+```
+
+Set credentials through environment variables when needed:
+- `AWS_ACCESS_KEY_ID`
+- `AWS_SECRET_ACCESS_KEY`
+
+## Notes
+
+- `ensemble` is a Triton core backend and is available without explicitly copying it as a plugin backend.
+- Compose/build warnings from upstream Triton scripts may appear; most are non-blocking unless Docker build fails.

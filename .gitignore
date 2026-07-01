@@ -1,0 +1,44 @@
+# Build artifacts
+build/
+dist/
+*.egg-info/
+
+# Docker artifacts
+Dockerfile.compose
+*.dockerfile
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+.venv
+.env
+*.egg
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+*.sublime-project
+*.sublime-workspace
+
+# Triton specific
+*.pbtxt.bak
+*.log
+triton_*.tar.gz
+
+# OS
+.DS_Store
+Thumbs.db
+*.tmp
+
+# Generated files
+*.bak
+*.orig
