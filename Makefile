@@ -33,11 +33,10 @@ TRITON_FULL_IMAGE ?= nvcr.io/nvidia/tritonserver:$(TRITON_TAG)-py3
 TRITON_MIN_IMAGE ?= nvcr.io/nvidia/tritonserver:$(TRITON_TAG)-py3-min
 
 # Output Docker image name
-OUTPUT_IMAGE ?= lokeshkurre/tritonserver:$(TRITON_TAG)-slim
+OUTPUT_IMAGE ?= lokeshkurre/tritonserver:$(TRITON_TAG)-py3-slim
 
 # FastAPI wrapper template build settings
-WRAPPER_DIR ?= template-serving
-WRAPPER_IMAGE ?= lokeshkurre/tritonserver-fastapi:$(TRITON_TAG)-slim
+WRAPPER_IMAGE ?= lokeshkurre/tritonserver:$(TRITON_TAG)-py3-slim-fastapi
 
 # Skip pulling latest images (use locally available)
 SKIP_PULL ?= false
@@ -90,7 +89,6 @@ help:
 	@echo "  make build              - Build minimal Triton Docker image"
 	@echo "  make compose            - Generate Dockerfile (without building)"
 	@echo "  make build-fastapi-wrapper - Build FastAPI + Triton wrapper image"
-	@echo "  make run-fastapi-wrapper   - Run FastAPI + Triton wrapper image"
 	@echo "  make clean              - Remove build artifacts"
 	@echo "  make info               - Show build configuration"
 	@echo ""
@@ -102,7 +100,6 @@ help:
 	@echo "  REPOAGENTS              - Space-separated repo agents (optional)"
 	@echo "  TRITON_FULL_IMAGE       - Full Triton image to compose from"
 	@echo "  OUTPUT_IMAGE            - Output Docker image name (default: triton-minimal:TRITON_TAG)"
-	@echo "  WRAPPER_DIR             - FastAPI wrapper template directory (default: template-serving)"
 	@echo "  WRAPPER_IMAGE           - FastAPI wrapper image name"
 	@echo "  SKIP_PULL               - Skip pulling latest images (default: false)"
 	@echo "  VERBOSE                 - Enable verbose output (default: false)"
@@ -147,7 +144,6 @@ info:
 	@echo "  Environment: AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY"
 	@echo ""
 	@echo "Wrapper Template:"
-	@echo "  Dir:   $(WRAPPER_DIR)"
 	@echo "  Image: $(WRAPPER_IMAGE)"
 	@echo ""
 	@echo "Compose Flags:"
@@ -185,19 +181,11 @@ build: compose
 # Build FastAPI wrapper template image (uses minimal Triton image as base)
 build-fastapi-wrapper:
 	@echo "Building FastAPI wrapper image: $(WRAPPER_IMAGE)..."
-	docker build -t $(WRAPPER_IMAGE) -f $(WRAPPER_DIR)/Dockerfile $(WRAPPER_DIR)
+	docker build --build-arg BASE_IMAGE=$(OUTPUT_IMAGE) -t $(WRAPPER_IMAGE) .
 	@echo ""
 	@echo "Wrapper build completed!"
 	@echo "Image: $(WRAPPER_IMAGE)"
 	@docker images $(WRAPPER_IMAGE)
-
-# Run FastAPI wrapper template image
-run-fastapi-wrapper:
-	@echo "Running FastAPI wrapper image: $(WRAPPER_IMAGE)..."
-	docker run --rm -it \
-		-p 8080:8080 -p 9001:9001 -p 9002:9002 -p 9090:9090 \
-		-v $(abspath $(WRAPPER_DIR))/rootfs/model_repository:/model_repository \
-		$(WRAPPER_IMAGE)
 
 # Clean build artifacts
 clean:

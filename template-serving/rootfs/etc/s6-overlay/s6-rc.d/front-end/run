@@ -1,5 +1,0 @@
-#!/command/execlineb -P
-with-contenv
-importas -D 0.0.0.0 -S FRONTEND_HOST
-importas -D 8080 -S FRONTEND_PORT
-uvicorn --app-dir /app --factory app:create_app --host ${FRONTEND_HOST} --port ${FRONTEND_PORT} --proxy-headers --forwarded-allow-ips='*'
