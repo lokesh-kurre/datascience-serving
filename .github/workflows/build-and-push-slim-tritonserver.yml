@@ -23,7 +23,7 @@ jobs:
           git fetch --all
           git fetch --tags
           # Try to checkout the exact tag/branch, fallback to 'v' prefix if needed
-          git checkout R${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
+          git checkout r${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
           cd ..
       - name: Login to Docker Hub
         run: |
