@@ -3,8 +3,8 @@ name: Build and Push Custom Triton Images
 on:
   workflow_dispatch:
     inputs:
-      triton_branch:
-        description: 'Triton Release Branch (e.g., 24.04, 24.05)'
+      triton_version:
+        description: 'Triton Release Version (e.g., 24.04, 24.05)'
         required: true
         default: '24.04'
 
@@ -18,11 +18,12 @@ jobs:
           ref: main
           submodules: recursive
 
-      - name: Update submodule to target Triton branch
+      - name: Update submodule to target Triton release
         run: |
           cd extern/tritonserver
-          git fetch --all
-          git checkout ${{ github.event.inputs.triton_branch }}
+          git fetch --all --tags
+          # Try branch strategy r24.04, fallback to tag strategy v24.04
+          git checkout r${{ github.event.inputs.triton_version }} || git checkout v${{ github.event.inputs.triton_version }}
           cd ..
 
       - name: Login to Docker Hub
@@ -30,10 +31,10 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
 
       - name: 1. Build Minimal Image
-        run: make build TRITON_TAG=${{ github.event.inputs.triton_branch }}
+        run: make build TRITON_TAG=${{ github.event.inputs.triton_version }}
 
       - name: 2. Push Minimal Image
-        run: make push-minimal TRITON_TAG=${{ github.event.inputs.triton_branch }}
+        run: make push-minimal TRITON_TAG=${{ github.event.inputs.triton_version }}
 
       - name: 3. Build and Push FastAPI Wrapper
-        run: make push-fastapi-wrapper TRITON_TAG=${{ github.event.inputs.triton_branch }}
+        run: make push-fastapi-wrapper TRITON_TAG=${{ github.event.inputs.triton_version }}
