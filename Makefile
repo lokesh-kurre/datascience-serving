@@ -178,6 +178,10 @@ build: compose
 	@echo "  docker run --rm -p 8000:8000 -p 8001:8001 -p 8002:8002 $(OUTPUT_IMAGE)"
 	@echo ""
 
+# Pushes Built minimal Docker image using the composed Dockerfile
+push-minimal: build
+	docker push $(OUTPUT_IMAGE)
+
 # Build FastAPI wrapper template image (uses minimal Triton image as base)
 build-fastapi-wrapper:
 	@echo "Building FastAPI wrapper image: $(WRAPPER_IMAGE)..."
@@ -186,6 +190,10 @@ build-fastapi-wrapper:
 	@echo "Wrapper build completed!"
 	@echo "Image: $(WRAPPER_IMAGE)"
 	@docker images $(WRAPPER_IMAGE)
+
+# Pushes Built FastAPI wrapper template image (uses minimal Triton image as base)
+push-fastapi-wrapper: build-fastapi-wrapper
+	docker push $(WRAPPER_IMAGE)
 
 # Clean build artifacts
 clean:
