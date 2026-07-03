@@ -1,0 +1,51 @@
+name: Sync NVIDIA Images to Docker Hub
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'NVIDIA Container Version (e.g., 24.05, 24.09)'
+        required: true
+        default: '24.04'
+
+jobs:
+  sync-images:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        image:
+          - { src_repo: nvcr.io/nvidia/tritonserver, dst_repo: lokeshkurre/tritonserver, suffix: "-py3" }
+          - { src_repo: nvcr.io/nvidia/tritonserver, dst_repo: lokeshkurre/tritonserver, suffix: "-py3-sdk" }
+          - { src_repo: nvcr.io/nvidia/tritonserver, dst_repo: lokeshkurre/tritonserver, suffix: "-py3-min" }
+          - { src_repo: nvcr.io/nvidia/tensorrt, dst_repo: lokeshkurre/tensorrt, suffix: "-py3" }
+    steps:
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
+
+      - name: Login to NGC
+        run: |
+          if [ -n "${{ secrets.NGC_API_KEY }}" ]; then
+            echo "${{ secrets.NGC_API_KEY }}" | docker login nvcr.io -u '$oauthtoken' --password-stdin
+          else
+            echo "NGC_API_KEY not set, pulling anonymously"
+          fi
+
+      - name: Pull, Tag, and Push
+        env:
+          VERSION: ${{ github.event.inputs.version }}
+          SRC_REPO: ${{ matrix.image.src_repo }}
+          DST_REPO: ${{ matrix.image.dst_repo }}
+          SUFFIX: ${{ matrix.image.suffix }}
+        run: |
+          SRC="${SRC_REPO}:${VERSION}${SUFFIX}"
+          DST="${DST_REPO}:${VERSION}${SUFFIX}"
+          
+          echo "Pulling: $SRC"
+          docker pull "$SRC"
+          
+          echo "Tagging: $DST"
+          docker tag "$SRC" "$DST"
+          
+          echo "Pushing: $DST"
+          docker push "$DST"
