@@ -1,0 +1,37 @@
+name: Build and Push Custom Triton Images
+
+on:
+  workflow_dispatch:
+    inputs:
+      triton_tag:
+        description: 'Triton Release Tag (e.g., 24.09, 24.05)'
+        required: true
+        default: '24.04'
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout main branch with submodules
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: recursive
+
+      - name: Update submodule to target Triton tag
+        run: |
+          cd extern/server
+          git fetch --all --tags
+          # Try to checkout the exact tag, fallback to 'v' prefix if needed
+          git checkout ${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
+          cd ..
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
+
+      - name: 1. Build and Push Minimal Image
+        run: make push-minimal TRITON_TAG=${{ github.event.inputs.triton_tag }}
+
+      - name: 2. Build and Push FastAPI Wrapper
+        run: make push-fastapi-wrapper TRITON_TAG=${{ github.event.inputs.triton_tag }}
