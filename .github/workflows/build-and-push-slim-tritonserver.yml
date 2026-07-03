@@ -1,13 +1,11 @@
 name: Build and Push Custom Triton Images
-
 on:
   workflow_dispatch:
     inputs:
-      triton_version:
-        description: 'Triton Release Version (e.g., 24.04, 24.05)'
+      triton_tag:
+        description: 'Triton Release Tag (e.g., 24.04, 24.05)'
         required: true
         default: '24.04'
-
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -17,25 +15,20 @@ jobs:
         with:
           ref: main
           submodules: recursive
-
-      - name: Update submodule to target Triton release
+      - name: Update submodule to target Triton tag
         run: |
           cd extern/tritonserver
+          # Allow fetching all branches and tags from the remote
+          git remote set-branches origin '*'
           git fetch --all
           git fetch --tags
-          # Try branch strategy r24.04, fallback to tag strategy v24.04
-          git checkout r${{ github.event.inputs.triton_version }} || git checkout v${{ github.event.inputs.triton_version }}
+          # Try to checkout the exact tag/branch, fallback to 'v' prefix if needed
+          git checkout R${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
           cd ..
-
       - name: Login to Docker Hub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
-
-      - name: 1. Build Minimal Image
-        run: make build TRITON_TAG=${{ github.event.inputs.triton_version }}
-
-      - name: 2. Push Minimal Image
-        run: make push-minimal TRITON_TAG=${{ github.event.inputs.triton_version }}
-
-      - name: 3. Build and Push FastAPI Wrapper
-        run: make push-fastapi-wrapper TRITON_TAG=${{ github.event.inputs.triton_version }}
+      - name: 1. Build and Push Minimal Image
+        run: make push-minimal TRITON_TAG=${{ github.event.inputs.triton_tag }}
+      - name: 2. Build and Push FastAPI Wrapper
+        run: make push-fastapi-wrapper TRITON_TAG=${{ github.event.inputs.triton_tag }}
