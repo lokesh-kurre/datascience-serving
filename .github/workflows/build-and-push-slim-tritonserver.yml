@@ -21,7 +21,8 @@ jobs:
       - name: Update submodule to target Triton release
         run: |
           cd extern/tritonserver
-          git fetch --all --tags
+          git fetch --all
+          git fetch --tags
           # Try branch strategy r24.04, fallback to tag strategy v24.04
           git checkout r${{ github.event.inputs.triton_version }} || git checkout v${{ github.event.inputs.triton_version }}
           cd ..
