@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       triton_tag:
-        description: 'Triton Release Tag (e.g., 24.09, 24.05)'
+        description: 'Triton Release Tag (e.g., 24.04, 24.05)'
         required: true
         default: '24.04'
 
@@ -20,7 +20,7 @@ jobs:
 
       - name: Update submodule to target Triton tag
         run: |
-          cd extern/server
+          cd extern/tritonserver
           git fetch --all --tags
           # Try to checkout the exact tag, fallback to 'v' prefix if needed
           git checkout ${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
