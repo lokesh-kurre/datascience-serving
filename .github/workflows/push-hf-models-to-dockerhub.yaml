@@ -1,0 +1,57 @@
+name: Build and Push HF Model Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      model_name:
+        description: 'HuggingFace model name (e.g. bert-base-uncased)'
+        required: true
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set model tag
+        id: vars
+        run: |
+          MODEL_TAG=$(basename "${{ github.event.inputs.model_name }}")
+          echo "tag=$MODEL_TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Generate inline Dockerfile
+        run: |
+          cat <<'EOF' > Dockerfile
+          FROM python:3.10
+
+          ARG MODEL_NAME
+          ENV HF_HOME=/hf-cache
+
+          RUN pip install --no-cache-dir huggingface_hub[cli]
+
+          RUN mkdir -p /models \
+           && name=$(basename "$MODEL_NAME") \
+           && hf download "$MODEL_NAME" --local-dir "/models/$name"
+
+          CMD ["sh", "-c", "echo 'Model image ready.' && ls -lh /models/"]
+          EOF
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
+
+      - name: Build and Push Image
+        run: |
+          docker build \
+            --build-arg MODEL_NAME="${{ github.event.inputs.model_name }}" \
+            -t lokeshkurre/test:${{ steps.vars.outputs.tag }} \
+            .
+
+          docker push lokeshkurre/test:${{ steps.vars.outputs.tag }}
+
+      - name: Summary
+        run: |
+          echo "### Image Published ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Model | \`${{ github.event.inputs.model_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`lokeshkurre/test:${{ steps.vars.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
