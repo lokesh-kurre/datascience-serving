@@ -1,31 +1,31 @@
-name: Build and Push vLLM Image
+name: Build and Push vLLM Model Image
 
 on:
   workflow_dispatch:
     inputs:
       model:
-        description: Hugging Face model (e.g. Qwen/Qwen3-Coder-30B-A3B-Instruct)
+        description: "HuggingFace model (e.g. Qwen/Qwen3-Coder-30B-A3B-Instruct)"
         required: true
 
       image:
-        description: Docker image
-        default: lokeshkurre/vllm
+        description: "Docker image"
+        default: "lokeshkurre/vllm"
 
       tag:
-        description: Docker tag
-        default: latest
+        description: "Docker tag"
+        default: "latest"
 
       context:
-        description: Max context length
+        description: "Max context length"
         default: "131072"
 
       gpu_memory:
-        description: GPU memory utilization
+        description: "GPU memory utilization"
         default: "0.90"
 
       tool_parser:
-        description: Tool parser (auto/hermes/qwen3_coder)
-        default: auto
+        description: "Tool parser (auto, qwen3_coder, hermes...)"
+        default: "auto"
 
 jobs:
   build:
@@ -37,15 +37,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Generate image tag
-        id: vars
-        shell: bash
-        run: |
-          NAME=$(basename "${{ github.event.inputs.model }}" | tr '[:upper:]' '[:lower:]')
-          echo "model_dir=$NAME" >> "$GITHUB_OUTPUT"
-
       - name: Generate Dockerfile
-        shell: bash
         run: |
           cat > Dockerfile <<'EOF'
           FROM vllm/vllm-openai:latest
@@ -56,14 +48,21 @@ jobs:
           ARG GPU_MEMORY
           ARG TOOL_PARSER
 
+          ENV MODEL=${MODEL}
+          ENV HF_TOKEN=${HF_TOKEN}
           ENV MODEL_PATH=/models/model
           ENV MAX_MODEL_LEN=${CONTEXT}
           ENV GPU_MEMORY_UTILIZATION=${GPU_MEMORY}
           ENV TOOL_CALL_PARSER=${TOOL_PARSER}
 
-          RUN pip install --no-cache-dir huggingface_hub
+          # Debug
+          RUN which python3 || true
+          RUN python3 --version || true
 
-          RUN python - <<PY
+          RUN python3 -m pip install --no-cache-dir --upgrade pip
+          RUN python3 -m pip install --no-cache-dir huggingface_hub
+
+          RUN python3 - <<'PY'
           import os
           from huggingface_hub import login, snapshot_download
 
@@ -74,20 +73,19 @@ jobs:
           snapshot_download(
               repo_id=os.environ["MODEL"],
               local_dir="/models/model",
-              local_dir_use_symlinks=False
+              local_dir_use_symlinks=False,
           )
           PY
 
           RUN cat >/start.sh <<'SCRIPT'
           #!/bin/bash
-
           set -e
 
           ARGS=(
             "$MODEL_PATH"
             --host 0.0.0.0
             --port 8000
-            --served-model-name "$(basename "$MODEL_PATH")"
+            --served-model-name "$(basename "$MODEL")"
             --max-model-len "$MAX_MODEL_LEN"
             --gpu-memory-utilization "$GPU_MEMORY_UTILIZATION"
           )
@@ -111,24 +109,24 @@ jobs:
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" \
             | docker login \
-              -u lokeshkurre \
-              --password-stdin
+                -u lokeshkurre \
+                --password-stdin
 
       - name: Build Image
         run: |
           docker build \
             --build-arg MODEL="${{ github.event.inputs.model }}" \
+            --build-arg HF_TOKEN="${{ secrets.HF_TOKEN }}" \
             --build-arg CONTEXT="${{ github.event.inputs.context }}" \
             --build-arg GPU_MEMORY="${{ github.event.inputs.gpu_memory }}" \
             --build-arg TOOL_PARSER="${{ github.event.inputs.tool_parser }}" \
-            --build-arg HF_TOKEN="${{ secrets.HF_TOKEN }}" \
-            -t ${{ github.event.inputs.image }}:${{ github.event.inputs.tag }} \
+            -t "${{ github.event.inputs.image }}:${{ github.event.inputs.tag }}" \
             .
 
       - name: Push Image
         run: |
           docker push \
-            ${{ github.event.inputs.image }}:${{ github.event.inputs.tag }}
+            "${{ github.event.inputs.image }}:${{ github.event.inputs.tag }}"
 
       - name: Summary
         run: |
@@ -143,12 +141,12 @@ jobs:
             echo "| Tool Parser | \`${{ github.event.inputs.tool_parser }}\` |"
             echo ""
             echo "### Pull"
-            echo '```'
+            echo '```bash'
             echo "docker pull ${{ github.event.inputs.image }}:${{ github.event.inputs.tag }}"
             echo '```'
             echo ""
             echo "### Run"
-            echo '```'
+            echo '```bash'
             echo "docker run --gpus all --ipc=host -p 8000:8000 \\"
             echo "  ${{ github.event.inputs.image }}:${{ github.event.inputs.tag }}"
             echo '```'
