@@ -3,9 +3,9 @@ on:
   workflow_dispatch:
     inputs:
       triton_tag:
-        description: 'Triton Release Tag (e.g., 24.04, 24.05)'
+        description: "Triton Release Tag (e.g., 24.04, 24.05)"
         required: true
-        default: '24.04'
+        default: "24.04"
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
@@ -14,17 +14,10 @@ jobs:
         uses: actions/checkout@v4
         with:
           ref: main
-          submodules: recursive
       - name: Update submodule to target Triton tag
         run: |
-          cd extern/tritonserver
-          # Allow fetching all branches and tags from the remote
-          git remote set-branches origin '*'
-          git fetch --all
-          git fetch --tags
-          # Try to checkout the exact tag/branch, fallback to 'v' prefix if needed
-          git checkout r${{ github.event.inputs.triton_tag }} || git checkout v${{ github.event.inputs.triton_tag }}
-          cd ..
+          git submodule set-branch -b r${{ github.event.inputs.triton_tag }} -- extern/tritonserver
+          git submodule update --init --remote -- extern/tritonserver
       - name: Login to Docker Hub
         run: |
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
