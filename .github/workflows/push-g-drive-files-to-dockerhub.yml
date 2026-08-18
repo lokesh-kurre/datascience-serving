@@ -1,0 +1,77 @@
+name: Build and Push GDrive Model Image
+
+on:
+  workflow_dispatch:
+    inputs:
+      file_id:
+        description: 'Google Drive File ID (e.g., 1A2B3C4D5E6F...)'
+        required: true
+      file_name:
+        description: 'Desired output file name (e.g., model.zip)'
+        required: false
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set image tag
+        id: vars
+        run: |
+          # Use the file name for the Docker tag if provided, otherwise use a generic tag based on the file ID
+          FILE_NAME="${{ github.event.inputs.file_name }}"
+          if [ -z "$FILE_NAME" ]; then
+            # Docker tags cannot contain uppercase letters, so we enforce lowercase
+            TAG="gdrive-${GITHUB_RUN_ID}"
+          else
+            # Sanitize the filename to be a valid Docker tag (lowercase, no spaces)
+            TAG=$(echo "$FILE_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9._-]//g')
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "filename=$FILE_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Generate inline Dockerfile
+        run: |
+          cat <<'EOF' > Dockerfile
+          FROM python:3.10
+          ARG FILE_ID
+          ARG FILE_NAME
+          ENV FILE_ID=${FILE_ID}
+          ENV FILE_NAME=${FILE_NAME}
+
+          # Install gdown to download files from Google Drive
+          RUN pip install --no-cache-dir gdown
+
+          # Download the file into /models directory
+          RUN mkdir -p /models \
+              && if [ -z "$FILE_NAME" ]; then \
+                   echo "No filename provided, using default." \
+                   && gdown "$FILE_ID" -O /models/downloaded_file; \
+                 else \
+                   gdown "$FILE_ID" -O "/models/$FILE_NAME"; \
+                 fi
+
+          CMD ["sh", "-c", "echo 'Model image ready.' && ls -lh /models/"]
+          EOF
+
+      - name: Login to Docker Hub
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
+
+      - name: Build and Push Image
+        run: |
+          docker build \
+            --build-arg FILE_ID="${{ github.event.inputs.file_id }}" \
+            --build-arg FILE_NAME="${{ github.event.inputs.file_name }}" \
+            -t lokeshkurre/test:${{ steps.vars.outputs.tag }} \
+            .
+          docker push lokeshkurre/test:${{ steps.vars.outputs.tag }}
+
+      - name: Summary
+        run: |
+          echo "### Image Published ✅" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
+          echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GDrive File ID | \`${{ github.event.inputs.file_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File Name | \`${{ steps.vars.outputs.filename }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`lokeshkurre/test:${{ steps.vars.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
