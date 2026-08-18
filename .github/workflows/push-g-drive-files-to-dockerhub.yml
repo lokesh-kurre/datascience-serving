@@ -4,67 +4,82 @@ on:
   workflow_dispatch:
     inputs:
       file_id:
-        description: 'Google Drive File ID (e.g., 1A2B3C4D5E6F...)'
+        description: "Google Drive File ID"
         required: true
+        type: string
       file_name:
-        description: 'Desired output file name (e.g., model.zip)'
+        description: "Output file name (defaults to file ID)"
         required: false
+        type: string
+      is_folder:
+        description: "Is the Google Drive item a folder?"
+        required: true
+        type: boolean
+        default: false
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-    steps:
-      - name: Set image tag
-        id: vars
-        run: |
-          # Use the file name for the Docker tag if provided, otherwise use a generic tag based on the file ID
-          FILE_NAME="${{ github.event.inputs.file_name }}"
-          if [ -z "$FILE_NAME" ]; then
-            # Docker tags cannot contain uppercase letters, so we enforce lowercase
-            TAG="gdrive-${GITHUB_RUN_ID}"
-          else
-            # Sanitize the filename to be a valid Docker tag (lowercase, no spaces)
-            TAG=$(echo "$FILE_NAME" | tr '[:upper:]' '[:lower:]' | sed 's/ /-/g' | sed 's/[^a-z0-9._-]//g')
-          fi
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "filename=$FILE_NAME" >> "$GITHUB_OUTPUT"
 
-      - name: Generate inline Dockerfile
+    steps:
+      - name: Set Variables
         run: |
-          cat <<'EOF' > Dockerfile
+          FILE_ID="${{ inputs.file_id }}"
+          FILE_NAME="${{ inputs.file_name || inputs.file_id }}"
+          TAG="gdrive-${FILE_ID}"
+
+          echo "FILE_ID=$FILE_ID" >> "$GITHUB_ENV"
+          echo "FILE_NAME=$FILE_NAME" >> "$GITHUB_ENV"
+          echo "IS_FOLDER=${{ inputs.is_folder }}" >> "$GITHUB_ENV"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+
+      - name: Create Dockerfile
+        run: |
+          cat > Dockerfile <<'EOF'
           FROM python:3.10
+
           ARG FILE_ID
           ARG FILE_NAME
-          ENV FILE_ID=${FILE_ID}
-          ENV FILE_NAME=${FILE_NAME}
+          ARG IS_FOLDER
 
-          # Install gdown to download files from Google Drive
-          RUN pip install --no-cache-dir gdown
+          ENV FILE_ID=$FILE_ID
+          ENV FILE_NAME=$FILE_NAME
+          ENV IS_FOLDER=$IS_FOLDER
 
-          # Download the file into /models directory
-          RUN mkdir -p /models \
-              && if [ -z "$FILE_NAME" ]; then \
-                   echo "No filename provided, using default." \
-                   && gdown "$FILE_ID" -O /models/downloaded_file; \
+          RUN pip install --no-cache-dir --progress-bar=off gdown
+
+          RUN mkdir -p /data \
+              && if [ "$IS_FOLDER" = "true" ]; then \
+                   gdown --folder -O /data "$FILE_ID"; \
                  else \
-                   gdown "$FILE_ID" -O "/models/$FILE_NAME"; \
-                 fi
+                   gdown -O /data "$FILE_ID"; \
+                 fi \
+              && tar -czf "/data-gdrive-$FILE_ID.tar.gz" -C /data . \
+              && rm -rf /data/*
 
-          CMD ["sh", "-c", "echo 'Model image ready.' && ls -lh /models/"]
+          CMD ["sh", "-c", "echo 'Model image ready.' && tar -tf \"/data-gdrive-${FILE_ID}.tar.gz\""]
           EOF
 
-      - name: Login to Docker Hub
-        run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
 
-      - name: Build and Push Image
-        run: |
-          docker build \
-            --build-arg FILE_ID="${{ github.event.inputs.file_id }}" \
-            --build-arg FILE_NAME="${{ github.event.inputs.file_name }}" \
-            -t lokeshkurre/test:${{ steps.vars.outputs.tag }} \
-            .
-          docker push lokeshkurre/test:${{ steps.vars.outputs.tag }}
+      - name: Login to Docker Hub
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/test:${{ env.TAG }}
+          build-args: |
+            FILE_ID=${{ env.FILE_ID }}
+            FILE_NAME=${{ env.FILE_NAME }}
+            IS_FOLDER=${{ env.IS_FOLDER }}
 
       - name: Summary
         run: |
@@ -72,6 +87,8 @@ jobs:
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| GDrive File ID | \`${{ github.event.inputs.file_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| File Name | \`${{ steps.vars.outputs.filename }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image | \`lokeshkurre/test:${{ steps.vars.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| GDrive File ID | \`${FILE_ID}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| File Name | \`${FILE_NAME}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Is Folder | \`${IS_FOLDER}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Archive | \`data-gdrive-${FILE_ID}.tar.gz\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ vars.DOCKERHUB_USERNAME }}/test:${TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
