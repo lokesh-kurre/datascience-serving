@@ -1,52 +1,81 @@
 name: Build and Push HF Model Image
+
 on:
   workflow_dispatch:
     inputs:
-      model_name:
-        description: 'HuggingFace model name (e.g. bert-base-uncased)'
+      repo_id:
+        description: "HuggingFace Model ID (e.g. google-bert/bert-base-uncased)"
         required: true
+        type: string
       hf_token:
-        description: 'HuggingFace token (for gated/private models)'
+        description: "HuggingFace Access Token (for gated/private models)"
         required: false
+        type: string
+
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Set model tag
-        id: vars
+      - name: Create Dockerfile
         run: |
-          MODEL_TAG=$(basename "${{ github.event.inputs.model_name }}")
-          echo "tag=$MODEL_TAG" >> "$GITHUB_OUTPUT"
-      - name: Generate inline Dockerfile
-        run: |
-          cat <<'EOF' > Dockerfile
+          cat > Dockerfile <<'EOF'
+          # syntax=docker/dockerfile:1.7
+
           FROM python:3.10
-          ARG MODEL_NAME
-          ARG HF_TOKEN
-          ENV HF_HOME=/hf-cache
-          ENV HF_TOKEN=${HF_TOKEN}
-          RUN pip install --no-cache-dir huggingface_hub[cli]
-          RUN mkdir -p /models \
-           && name=$(basename "$MODEL_NAME") \
-           && hf download "$MODEL_NAME" --local-dir "/models/$name" --token "$HF_TOKEN"
-          CMD ["sh", "-c", "echo 'Model image ready.' && ls -lh /models/"]
+
+          ARG repo_id
+          ARG model_tag
+
+          RUN pip install --no-cache-dir --progress-bar=off huggingface_hub
+
+          RUN --mount=type=secret,id=hf_token \
+              mkdir -p "/models/$model_tag" \
+              && HF_TOKEN="$(cat /run/secrets/hf_token)" \
+              && export HF_TOKEN \
+              && hf download "$repo_id" --local-dir "/models/$model_tag" \
+              && tar -czf "/$model_tag.tar.gz" -C /models --exclude=".cache" "$model_tag" \
+              && rm -rf /models
+
+          ENV MODEL_TAG=$model_tag
+
+          CMD ["sh", "-c", "echo 'Model image ready.' && tar -tf \"/${MODEL_TAG}.tar.gz\""]
           EOF
+
+      - name: Set Model Tag
+        run: |
+          MODEL_TAG=$(basename "${{ inputs.repo_id }}")
+          echo "MODEL_TAG=$MODEL_TAG" >> "$GITHUB_ENV"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
       - name: Login to Docker Hub
-        run: |
-          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u lokeshkurre --password-stdin
-      - name: Build and Push Image
-        run: |
-          docker build \
-            --build-arg MODEL_NAME="${{ github.event.inputs.model_name }}" \
-            --build-arg HF_TOKEN="${{ github.event.inputs.hf_token }}" \
-            -t lokeshkurre/test:${{ steps.vars.outputs.tag }} \
-            .
-          docker push lokeshkurre/test:${{ steps.vars.outputs.tag }}
+        uses: docker/login-action@v4
+        with:
+          username: ${{ vars.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build and Push
+        uses: docker/build-push-action@v7
+        env:
+          HF_TOKEN: ${{ inputs.hf_token || secrets.HF_TOKEN || '' }}
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ vars.DOCKERHUB_USERNAME }}/test:${{ env.MODEL_TAG }}
+          build-args: |
+            repo_id=${{ inputs.repo_id }}
+            model_tag=${{ env.MODEL_TAG }}
+          secret-envs: |
+            hf_token=HF_TOKEN
+
       - name: Summary
         run: |
           echo "### Image Published ✅" >> "$GITHUB_STEP_SUMMARY"
           echo "" >> "$GITHUB_STEP_SUMMARY"
           echo "| Field | Value |" >> "$GITHUB_STEP_SUMMARY"
           echo "|-------|-------|" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Model | \`${{ github.event.inputs.model_name }}\` |" >> "$GITHUB_STEP_SUMMARY"
-          echo "| Image | \`lokeshkurre/test:${{ steps.vars.outputs.tag }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Model | \`${{ inputs.repo_id }}\` |" >> "$GITHUB_STEP_SUMMARY"
+          echo "| Image | \`${{ vars.DOCKERHUB_USERNAME }}/test:${MODEL_TAG}\` |" >> "$GITHUB_STEP_SUMMARY"
